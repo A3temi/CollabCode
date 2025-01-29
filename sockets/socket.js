@@ -213,7 +213,7 @@ const socketHandlers = (io) => {
                         {
                             id: socket.userId,
                             username,
-                            joinedAt
+                            joinedAt: new Date().toISOString()
                         },
                     ],
                     code: "# Write your Python code here",
