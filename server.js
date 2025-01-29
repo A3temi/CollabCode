@@ -12,11 +12,11 @@ const io = new Server(server);
 app.use(express.json());
 
 // Serve the static files from the React app build folder
-app.use(express.static(path.join(__dirname, './my-app/dist')));
+app.use(express.static(path.join(__dirname, '/my-app/dist')));
 
 // Route all other requests to the React app's index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, './my-app/dist', 'index.html'));
+  res.sendFile(path.join(__dirname, '/my-app/dist', 'index.html'));
 });
 
 // Initialize Socket.IO handlers
