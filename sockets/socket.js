@@ -246,6 +246,14 @@ const socketHandlers = (io) => {
         
                 // Check if the user is already in the session
                 const existingMember = session.members.find((member) => member.id === userId);
+
+                if (!existingMember) {
+                    session.members.push({ id: userId, username: user.username || "Guest" });
+
+                    // **Set the join time when the user enters the session**
+                    if (!users[userId].joinedSessions) users[userId].joinedSessions = {};
+                    users[userId].joinedSessions[sessionId] = new Date().toISOString();
+                }
         
                 // If the session is full but the user is already in, allow rejoining
                 if (!existingMember && session.members.length >= session.maxUsers) {
@@ -271,6 +279,95 @@ const socketHandlers = (io) => {
             } catch (error) {
                 console.error("Error joining session:", error.message);
                 callback({ success: false, message: "Failed to join session" });
+            }
+        });
+        
+        socket.on("leaveSession", ({ sessionId }, callback) => {
+            try {
+                if (!sessions[sessionId]) {
+                    if (typeof callback === "function") {
+                        return callback({ success: false, message: "Session not found" });
+                    }
+                    return;
+                }
+        
+                const session = sessions[sessionId];
+                const userId = socket.userId;
+        
+                if (!userId || !users[userId]) {
+                    if (typeof callback === "function") {
+                        return callback({ success: false, message: "User not found" });
+                    }
+                    return;
+                }
+        
+                const user = users[userId];
+        
+                // Ensure user has session tracking
+                if (!user.joinedSessions) user.joinedSessions = {};
+        
+                const joinedTime = user.joinedSessions[sessionId];
+
+                if (!joinedTime) {
+                    console.warn(`User ${userId} had no recorded join time for session ${sessionId}`);
+                    return callback({ success: false, message: "Join time not recorded" });
+                }
+                const leftTime = new Date().toISOString();
+                const duration = Math.floor((new Date(leftTime) - new Date(joinedTime)) / 1000); // Duration in seconds
+        
+                // Add session details to user's session history
+                if (!user.sessions) user.sessions = [];
+                user.sessions.push({
+                    sessionId,
+                    name: session.name,
+                    description: session.description,
+                    duration,
+                    leftAt: leftTime,
+                    wasHost: session.host === userId,
+                });
+
+                function updateUserLevelAndRank(user) {
+                    if (!user || !user.sessions) return;
+                
+                    // **Calculate total time spent in sessions (in seconds)**
+                    user.timeSpent = user.sessions.reduce((total, session) => total + session.duration, 0);
+                
+                    // **Calculate level: 1 level per 20 minutes (1200 seconds)**
+                    user.level = Math.floor(user.timeSpent / 1200) + 1; // Ensures level starts at 1
+                
+                    // **Determine rank: Every 5 levels corresponds to a new rank**
+                    const rankIndex = Math.min(Math.floor(user.level / 5), rankNames.length - 1);
+                    user.rank = rankNames[rankIndex];
+                }
+        
+                // **Update user level and rank**
+                updateUserLevelAndRank(user);
+        
+                // Remove user from session members
+                session.members = session.members.filter(member => member.id !== userId);
+        
+                // Delete session if empty
+                if (session.members.length === 0) {
+                    delete sessions[sessionId];
+                } else {
+                    // Notify remaining members about updated user list
+                    io.to(sessionId).emit(
+                        "updateUsers",
+                        session.members.map(({ id, username, handRaised }) => ({ id, username, handRaised }))
+                    );
+                }
+        
+                // Remove the user from the room
+                socket.leave(sessionId);
+        
+                if (typeof callback === "function") {
+                    callback({ success: true });
+                }
+            } catch (error) {
+                console.error("Error leaving session:", error.message);
+                if (typeof callback === "function") {
+                    callback({ success: false, message: "Failed to leave session" });
+                }
             }
         });
 
@@ -331,90 +428,6 @@ const socketHandlers = (io) => {
             } catch (error) {
                 console.error("Error banning user:", error.message);
                 callback({ success: false, message: "Failed to ban user." });
-            }
-        });
-        
-        socket.on("leaveSession", ({ sessionId }, callback) => {
-            try {
-                if (!sessions[sessionId]) {
-                    if (typeof callback === "function") {
-                        return callback({ success: false, message: "Session not found" });
-                    }
-                    return;
-                }
-        
-                const session = sessions[sessionId];
-                const userId = socket.userId;
-        
-                if (!userId || !users[userId]) {
-                    if (typeof callback === "function") {
-                        return callback({ success: false, message: "User not found" });
-                    }
-                    return;
-                }
-        
-                const user = users[userId];
-        
-                // Ensure user has session tracking
-                if (!user.joinedSessions) user.joinedSessions = {};
-        
-                const joinedTime = user.joinedSessions[sessionId] || new Date().toISOString();
-                const leftTime = new Date().toISOString();
-                const duration = Math.floor((new Date(leftTime) - new Date(joinedTime)) / 1000); // Duration in seconds
-        
-                // Add session details to user's session history
-                if (!user.sessions) user.sessions = [];
-                user.sessions.push({
-                    sessionId,
-                    name: session.name,
-                    description: session.description,
-                    duration,
-                    leftAt: leftTime,
-                    wasHost: session.host === userId,
-                });
-
-                function updateUserLevelAndRank(user) {
-                    if (!user || !user.sessions) return;
-                
-                    // **Calculate total time spent in sessions (in seconds)**
-                    user.timeSpent = user.sessions.reduce((total, session) => total + session.duration, 0);
-                
-                    // **Calculate level: 1 level per 20 minutes (1200 seconds)**
-                    user.level = Math.floor(user.timeSpent / 1200) + 1; // Ensures level starts at 1
-                
-                    // **Determine rank: Every 5 levels corresponds to a new rank**
-                    const rankIndex = Math.min(Math.floor(user.level / 5), rankNames.length - 1);
-                    user.rank = rankNames[rankIndex];
-                }
-        
-                // **Update user level and rank**
-                updateUserLevelAndRank(user);
-        
-                // Remove user from session members
-                session.members = session.members.filter(member => member.id !== userId);
-        
-                // Delete session if empty
-                if (session.members.length === 0) {
-                    delete sessions[sessionId];
-                } else {
-                    // Notify remaining members about updated user list
-                    io.to(sessionId).emit(
-                        "updateUsers",
-                        session.members.map(({ id, username, handRaised }) => ({ id, username, handRaised }))
-                    );
-                }
-        
-                // Remove the user from the room
-                socket.leave(sessionId);
-        
-                if (typeof callback === "function") {
-                    callback({ success: true });
-                }
-            } catch (error) {
-                console.error("Error leaving session:", error.message);
-                if (typeof callback === "function") {
-                    callback({ success: false, message: "Failed to leave session" });
-                }
             }
         });
 
