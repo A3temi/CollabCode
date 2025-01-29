@@ -238,31 +238,33 @@ const socketHandlers = (io) => {
         
                 const session = sessions[sessionId];
                 const userId = user?.id || socket.userId;
+                const username = user?.username?.trim();
         
-                // **Check if the user is banned**
+                // ✅ Prevent users without valid id and username from joining
+                if (!userId || !username) {
+                    return callback({ success: false, message: "Invalid user. Cannot join session." });
+                }
+        
+                // ✅ Check if the user is banned
                 if (session.bannedUsers && session.bannedUsers.has(userId)) {
                     return callback({ success: false, message: "You have been banned from this session." });
                 }
         
                 // Check if the user is already in the session
-                const existingMember = session.members.find((member) => member.id === userId);
-
-                if (!existingMember) {
-                    session.members.push({ id: userId, username: user.username || "Guest" });
-
-                    // **Set the join time when the user enters the session**
-                    if (!users[userId].joinedSessions) users[userId].joinedSessions = {};
-                    users[userId].joinedSessions[sessionId] = new Date().toISOString();
-                }
+                const existingMember = session.members.find(member => member.id === userId);
         
-                // If the session is full but the user is already in, allow rejoining
+                // ✅ If session is full but the user is already in, allow rejoining
                 if (!existingMember && session.members.length >= session.maxUsers) {
                     return callback({ success: false, message: "Session is full" });
                 }
         
-                // If the user is not in the session, add them
+                // ✅ If the user is not in the session, add them with a join timestamp
                 if (!existingMember) {
-                    session.members.push({ id: userId, username: user.username || "Guest" });
+                    session.members.push({
+                        id: userId,
+                        username,
+                        joinedAt: new Date().toISOString() // ✅ Store correct join time
+                    });
                 }
         
                 // Add the user to the socket room
@@ -276,6 +278,7 @@ const socketHandlers = (io) => {
         
                 // Send back full session details
                 callback({ success: true, session });
+        
             } catch (error) {
                 console.error("Error joining session:", error.message);
                 callback({ success: false, message: "Failed to join session" });
@@ -306,14 +309,16 @@ const socketHandlers = (io) => {
                 // Ensure user has session tracking
                 if (!user.joinedSessions) user.joinedSessions = {};
         
-                const joinedTime = user.joinedSessions[sessionId];
+                const memberData = session.members.find(member => member.id === userId);
 
-                if (!joinedTime) {
+                if (!memberData || !memberData.joinedAt) {
                     console.warn(`User ${userId} had no recorded join time for session ${sessionId}`);
                     return callback({ success: false, message: "Join time not recorded" });
                 }
-                const leftTime = new Date().toISOString();
-                const duration = Math.floor((new Date(leftTime) - new Date(joinedTime)) / 1000); // Duration in seconds
+
+                const joinedTime = new Date(memberData.joinedAt);
+                const leftTime = new Date();
+                const duration = Math.floor((leftTime - joinedTime) / 1000); // Duration in seconds
         
                 // Add session details to user's session history
                 if (!user.sessions) user.sessions = [];
