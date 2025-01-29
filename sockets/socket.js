@@ -476,7 +476,6 @@ const socketHandlers = (io) => {
 
         socket.on("runCodeInteractive", ({ sessionId }, callback) => {
             try {
-                console.log(`[runCodeInteractive] Received request for sessionId: ${sessionId}`);
         
                 if (!sessions[sessionId]) {
                     console.warn(`[runCodeInteractive] Session not found for sessionId: ${sessionId}`);
@@ -489,11 +488,9 @@ const socketHandlers = (io) => {
                     return callback({ success: false, message: "No code to run" });
                 }
         
-                console.log(`[runCodeInteractive] Creating temp directory for execution...`);
                 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "python-exec-"));
                 const scriptPath = path.join(tempDir, "script.py");
                 fs.writeFileSync(scriptPath, code);
-                console.log(`[runCodeInteractive] Python script saved at: ${scriptPath}`);
         
                 const pythonProcess = spawn("python", [scriptPath], {
                     cwd: tempDir,
@@ -502,24 +499,19 @@ const socketHandlers = (io) => {
         
                 activeSessions[sessionId] = pythonProcess; // Store process reference
         
-                console.log(`[runCodeInteractive] Python process started (PID: ${pythonProcess.pid})`);
-        
                 // Forward stdout (terminal output) to frontend
                 pythonProcess.stdout.on("data", (data) => {
                     const output = data.toString();
-                    console.log(`[runCodeInteractive] stdout: ${output.trim()}`);
                     io.to(sessionId).emit("terminalData", { data: output }); // Send raw terminal data
                 });
         
                 // Forward stderr (error messages) to frontend
                 pythonProcess.stderr.on("data", (data) => {
                     const error = data.toString();
-                    console.error(`[runCodeInteractive] stderr: ${error.trim()}`);
                     io.to(sessionId).emit("terminalData", { data: error });
                 });
         
                 pythonProcess.on("close", (code) => {
-                    console.log(`[runCodeInteractive] Python process exited with code: ${code}`);
                     fs.rmSync(tempDir, { recursive: true, force: true });
                     delete activeSessions[sessionId];
         
