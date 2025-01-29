@@ -213,6 +213,7 @@ const socketHandlers = (io) => {
                         {
                             id: socket.userId,
                             username,
+                            joinedAt
                         },
                     ],
                     code: "# Write your Python code here",
