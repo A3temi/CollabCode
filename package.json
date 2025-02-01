@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build": "cd ../my-app && npm run build && cd ../CollabCode && npm start"
+    "build": "npm install"
   },
   "keywords": [],
   "author": "",
