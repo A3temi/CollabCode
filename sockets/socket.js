@@ -229,14 +229,29 @@ const socketHandlers = (io) => {
                 console.error("Error creating session:", error.message);
                 callback({ success: false, message: "Failed to create session" });
             }
-        });        
+        });
+
+        socket.on("updateCursorSelection", ({ sessionId, cursor, selection }) => {
+            if (!sessions[sessionId]) return;
+        
+            // ✅ Store cursor & selection positions
+            sessions[sessionId].cursors = sessions[sessionId].cursors || {};
+            sessions[sessionId].cursors[socket.id] = { cursor, selection };
+        
+            // ✅ Broadcast updates to other members (excluding sender)
+            socket.to(sessionId).emit("updateCursorSelection", { 
+                cursor, 
+                selection, 
+                sender: socket.id
+            });
+        });
         
         socket.on("joinSession", ({ sessionId, user }, callback) => {
             try {
                 if (!sessions[sessionId]) {
                     return callback({ success: false, message: "Session not found" });
                 }
-        
+
                 const session = sessions[sessionId];
                 const userId = user?.id || socket.userId;
                 const username = user?.username?.trim();
@@ -311,12 +326,12 @@ const socketHandlers = (io) => {
                 if (!user.joinedSessions) user.joinedSessions = {};
         
                 const memberData = session.members.find(member => member.id === userId);
-
+        
                 if (!memberData || !memberData.joinedAt) {
                     console.warn(`User ${userId} had no recorded join time for session ${sessionId}`);
                     return callback({ success: false, message: "Join time not recorded" });
                 }
-
+        
                 const joinedTime = new Date(memberData.joinedAt);
                 const leftTime = new Date();
                 const duration = Math.floor((leftTime - joinedTime) / 1000); // Duration in seconds
@@ -331,16 +346,16 @@ const socketHandlers = (io) => {
                     leftAt: leftTime,
                     wasHost: session.host === userId,
                 });
-
+        
                 function updateUserLevelAndRank(user) {
                     if (!user || !user.sessions) return;
-                
+        
                     // **Calculate total time spent in sessions (in seconds)**
                     user.timeSpent = user.sessions.reduce((total, session) => total + session.duration, 0);
-                
+        
                     // **Calculate level: 1 level per 20 minutes (1200 seconds)**
                     user.level = Math.floor(user.timeSpent / 1200) + 1; // Ensures level starts at 1
-                
+        
                     // **Determine rank: Every 5 levels corresponds to a new rank**
                     const rankIndex = Math.min(Math.floor(user.level / 5), rankNames.length - 1);
                     user.rank = rankNames[rankIndex];
@@ -352,9 +367,10 @@ const socketHandlers = (io) => {
                 // Remove user from session members
                 session.members = session.members.filter(member => member.id !== userId);
         
-                // Delete session if empty
-                if (session.members.length === 0) {
+                // ✅ If the host leaves, delete the session and notify users
+                if (session.host === userId) {
                     delete sessions[sessionId];
+                    io.to(sessionId).emit("deletedSession", { sessionId, message: "The session has been deleted because the host left." });
                 } else {
                     // Notify remaining members about updated user list
                     io.to(sessionId).emit(
@@ -375,7 +391,7 @@ const socketHandlers = (io) => {
                     callback({ success: false, message: "Failed to leave session" });
                 }
             }
-        });
+        });        
 
         socket.on("checkSession", (sessionId, callback) => {
             try {
