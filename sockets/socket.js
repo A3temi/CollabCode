@@ -829,7 +829,7 @@ const socketHandlers = (io) => {
                 // Search users in Supabase
                 const { data: users, error } = await supabase
                     .from("users")
-                    .select("id, username, profileImage, level, rank")
+                    .select("*")
                     .ilike("username", `%${query}%`);
 
                 if (error) {
